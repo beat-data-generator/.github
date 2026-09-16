@@ -1,5 +1,5 @@
 ## Hi there 👋
-Beat Data Generator 是一个专用于音乐踩点的工具，皆在提供 更便利、更简单、更强大 的踩点功能
+[Beat Data Generator](https://github.com/BUGJI/beat_data_generator) 是一个专用于音乐踩点的工具，皆在提供 更便利、更简单、更强大 的踩点功能
 
 同时可以让这份工程流转成各种你想要的格式，让你更便捷的去兼容各平台的工作
 
