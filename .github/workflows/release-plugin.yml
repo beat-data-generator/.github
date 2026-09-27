@@ -1,0 +1,98 @@
+name: Release plugin
+
+# Reusable workflow for Beat Data Generator plugin repositories.
+# Call it from a plugin repo on tag push (see the org README for the caller).
+#
+#   jobs:
+#     release:
+#       uses: beat-data-generator/.github/.github/workflows/release-plugin.yml@main
+#       permissions:
+#         contents: write
+#
+# It validates manifest.json against the pushed tag, packages `plugin.zip`
+# (manifest.json at the archive root), creates/updates the GitHub Release and
+# reports the artifact SHA-256. The registry repo picks up the release on its
+# next sync run.
+
+on:
+  workflow_call:
+    inputs:
+      asset-name:
+        description: Release asset file name.
+        type: string
+        default: "plugin.zip"
+      tag-prefix:
+        description: Prefix expected before the manifest version in the tag.
+        type: string
+        default: "v"
+      node-version:
+        description: Node.js version used for packaging.
+        type: string
+        default: "20"
+    outputs:
+      version:
+        description: Version read from manifest.json.
+        value: ${{ jobs.release.outputs.version }}
+      sha256:
+        description: SHA-256 of the packaged artifact.
+        value: ${{ jobs.release.outputs.sha256 }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      sha256: ${{ steps.meta.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Fetch packaging helper
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/beat-data-generator/.github/main/scripts/package-plugin.mjs" \
+            -o package-plugin.mjs
+
+      - name: Package plugin
+        run: node package-plugin.mjs --out "${{ inputs.asset-name }}"
+
+      - name: Read metadata
+        id: meta
+        run: |
+          node -e "const m=require('./release-meta.json');const fs=require('fs');fs.appendFileSync(process.env.GITHUB_OUTPUT,'version='+m.version+'\nsha256='+m.sha256+'\n');"
+
+      - name: Verify tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          expected="${{ inputs.tag-prefix }}${{ steps.meta.outputs.version }}"
+          if [ "$tag" != "$expected" ]; then
+            echo "::error::tag '$tag' does not match manifest version ('$expected')"
+            exit 1
+          fi
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          asset="${{ inputs.asset-name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$asset" --clobber
+          else
+            gh release create "$tag" "$asset" --title "$tag" --generate-notes
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "### ${GITHUB_REPOSITORY} ${GITHUB_REF_NAME}"
+            echo ""
+            echo "- version: \`${{ steps.meta.outputs.version }}\`"
+            echo "- sha256: \`${{ steps.meta.outputs.sha256 }}\`"
+            echo "- asset: \`${{ inputs.asset-name }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
